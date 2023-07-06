@@ -1,0 +1,120 @@
+#HW_2
+1. Смонтировать /home на отдельный раздел
+
+pacavaca@ubuntu-vm:~$ df -h
+Filesystem                         Size  Used Avail Use% Mounted on
+tmpfs                              392M  1,1M  391M   1% /run
+/dev/mapper/ubuntu--vg-ubuntu--lv   12G  5,3G  5,5G  49% /
+tmpfs                              2,0G     0  2,0G   0% /dev/shm
+tmpfs                              5,0M     0  5,0M   0% /run/lock
+/dev/mapper/ubuntu--vg-PacaTestLV  7,8G  188K  7,4G   1% /home
+/dev/sda2                          2,0G  130M  1,7G   8% /boot
+tmpfs       
+                       392M  4,0K  392M   1% /run/user/1000
+pacavaca@ubuntu-vm:~$ cat /etc/fstab | grep home
+/dev/mapper/ubuntu--vg-PacaTestLV /home ext4 defaults 0 0
+
+pacavaca@ubuntu-vm:~$ lsblk
+NAME                      MAJ:MIN RM   SIZE RO TYPE MOUNTPOINTS
+loop0                       7:0    0  63,4M  1 loop /snap/core20/1974
+loop1                       7:1    0  63,4M  1 loop /snap/core20/1950
+loop2                       7:2    0 111,9M  1 loop /snap/lxd/24322
+loop3                       7:3    0  49,8M  1 loop /snap/snapd/18357
+loop4                       7:4    0  53,3M  1 loop /snap/snapd/19457
+sda                         8:0    0    25G  0 disk
+├─sda1                      8:1    0     1M  0 part
+├─sda2                      8:2    0     2G  0 part /boot
+└─sda3                      8:3    0    23G  0 part
+  ├─ubuntu--vg-ubuntu--lv 253:0    0  11,5G  0 lvm  /
+  └─ubuntu--vg-lvol0      253:1    0     7G  0 lvm
+sdb                         8:16   0    10G  0 disk
+└─sdb1                      8:17   0    10G  0 part
+  └─ubuntu--vg-PacaTestLV 253:2    0     8G  0 lvm  /home
+sr0                        11:0    1  1024M  0 rom
+
+
+2. Создать нового пользователя user_with_group с home-директорией /var/home/user
+
+pacavaca@ubuntu-vm:~$ sudo useradd -m -d /var/home/user user_with_group
+pacavaca@ubuntu-vm:~$ sudo passwd user_with_group
+pacavaca@ubuntu-vm:~$ su - user_with_group
+$ pwd
+/var/home/user
+$ ls -la
+total 20
+drwxr-x--- 2 user_with_group user_with_group 4096 июл  6 10:04 .
+drwxr-xr-x 3 root            root            4096 июл  6 10:04 ..
+-rw-r--r-- 1 user_with_group user_with_group  220 янв  6  2022 .bash_logout
+-rw-r--r-- 1 user_with_group user_with_group 3771 янв  6  2022 .bashrc
+-rw-r--r-- 1 user_with_group user_with_group  807 янв  6  2022 .profile
+
+sudo usermod -s /usr/bin/bash user_with_group - изменение оболочки на bash
+
+3. Создать новую группу пользователей priv_group, перенести в нее пользователя user_with_group
+
+pacavaca@ubuntu-vm:~$  sudo groupadd priv_group
+pacavaca@ubuntu-vm:~$ cat /etc/group | grep priv
+priv_group:x:1003:
+
+pacavaca@ubuntu-vm:~$ sudo usermod -a -G priv_group user_with_group
+pacavaca@ubuntu-vm:~$ cat /etc/group | grep priv_group 
+priv_group:x:1003:user_with_group
+pacavaca@ubuntu-vm:~$ cat /etc/group | grep user_with_group
+user_with_group:x:1002:
+priv_group:x:1003:user_with_group
+
+
+4. Cоздать директорию и выдать права на нее только группе этого пользователя
+
+pacavaca@ubuntu-vm:~$ sudo mkdir /var/testdir/
+pacavaca@ubuntu-vm:~$ sudo chown .priv_group /var/testdir
+pacavaca@ubuntu-vm:~$ sudo chown user_with_group /var/testdir
+pacavaca@ubuntu-vm:~$ sudo chmod 770 /var/testdir
+pacavaca@ubuntu-vm:~$ ls -la /var/ | grep testdir
+drwxrwx---  2 user_with_group priv_group 4096 июл  6 10:26 testdir
+
+5. Установить ntpd(chrony), разрешить пользователю user_with_group выполнять команду 
+systemctl restart chronyd (нужны права sudo)
+
+pacavaca@ubuntu-vm:/var$ sudo apt install chrony
+pacavaca@ubuntu-vm:/etc/sudoers.d$ sudo visudo -f /etc/sudoers.d/user_with_group
+pacavaca@ubuntu-vm:/etc/sudoers.d$ sudo cat /etc/sudoers.d/user_with_group
+user_with_group ALL=NOPASSWD: /bin/systemctl start chrony.service, /bin/systemctl stop chrony.service, /bin/systemctl restart chrony.service, /bin/systemctl reload chrony.service, /bin/systemctl status chrony.service
+user_with_group ALL=NOPASSWD: /bin/systemctl start chrony, /bin/systemctl stop chrony, /bin/systemctl restart chrony, /bin/systemctl reload chrony, /bin/systemctl status chrony
+
+ 
+6. Вывод команды iostat -x в последней колонке показывает загрузку дисков в процентах. Откуда утилита это понимает?
+Достаточно ли вывода команды iostat -x для того, чтобы оценить реальную нагрузку на диски,  или нужны дополнительные условия или ключи?
+
+***
+7. chmod -x $(which chmod) 
+выполнить на виртуальной машине (!) исправить не прибегая к скачиванию\копированию с другого хоста
+
+root@ubuntu-vm:/home/pacavaca# chmod -x $(which chmod)
+root@ubuntu-vm:/home/pacavaca# ls -la /usr/bin/ | grep chmod
+-rw-r--r--  1 root root       55808 фев  7  2022 chmod
+
+Найдем файл, у которого стоит разрешение на исполнение, например /lib/apt/apt-helper:
+-rwxr-xr-x  1 root root 39560 сен 28  2022 apt-helper
+Скопируем его в домашний каталог:
+root@ubuntu-vm:/lib/apt# cp apt-helper /root/
+Создадим его копию с другим именем:
+root@ubuntu-vm:~# cp /root/apt-helper chmod
+-rwxr-xr-x  1 root root 39560 июл  6 15:41 chmod
+Скопируем исходный файл chmod в наш без изменения уровня прав:
+root@ubuntu-vm:~# cp /bin/chmod .
+-rwxr-xr-x  1 root root 55808 июл  6 15:41 chmod
+
+Проверим права на файл до и после копирования из домашнего каталога в исходное расположение:
+root@ubuntu-vm:~# ls -la /bin/chmod
+-rw-r--r-- 1 root root 55808 июл  6 15:42 /bin/chmod
+root@ubuntu-vm:~# cp chmod /bin/chmod -a
+root@ubuntu-vm:~# ls -la /bin/chmod
+-rwxr-xr-x 1 root root 55808 июл  6 15:41 /bin/chmod
+
+
+
+
+
+ и *** не обязательные
+Дедлайн: 13/07/2023
