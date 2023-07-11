@@ -1,0 +1,83 @@
+# 1. Создать bash-скрипт собирающий данные о количестве свободной памяти, текущей загрузке процессора,
+# ip-адрес, вывести в формате «Ключ: значение», причем все ключи заменить на русские названия,
+# например чтобы вместо «Mem: 1024Mb» получалось «Память: 1024Мб», 
+# для приведения к нужному формату использовать grep, sed и awk.
+
+pacavaca@ubuntu-vm:~$ ./hw3_1
+Всего оперативной памяти: 3,8 Гигабайт
+Количество ядер:          2
+Загрузка процессора:      0.01
+IP-адрес:                 127.0.0.1/8
+IP-адрес:                 10.0.2.11/24
+pacavaca@ubuntu-vm:~$ cat hw3_1
+#!/usr/bin/bash
+free -h | awk '/Mem/{print $1$2}' | sed -e 's/Gi/ Гигабайт/g' -e 's/Mem:/Всего оперативной памяти: /g';
+cat /proc/cpuinfo | grep processor | wc -l | awk '{$2 = "Количество ядер:          "; print $2 $1}';
+cat /proc/loadavg | awk '{ $6 = "Загрузка процессора:      "; print $6 $1}';
+ip -4 a | grep inet | awk '{print $1 $2}' | sed 's/inet/IP-адрес:                 /g '
+
+
+
+
+
+# 2. Написать bash-скрипт который создает пользователя (принимает имя в качестве первого аргумента) 
+# и создает в его домашней директории файл с информацией о системе: Ядро, CPU, RAM, Дисковая подсистема
+# (lscpu, lsblk, uname, etc). Вывод каждой команды должен быть отделен сепаратором (например ====)
+
+pacavaca@ubuntu-vm:~$ cat ./new_user_add
+#!/usr/bin/bash
+sudo useradd -m -s /bin/bash $1
+sudo passwd $1
+echo "Привет, дружище, тебе досталось:" > /home/$1/system_info
+echo "==========" >> /home/$1/system_info
+uname -a >> /home/$1/system_info
+echo "==========" >> /home/$1/system_info
+lscpu >> /home/$1/system_info
+echo "==========" >> /home/$1/system_info
+df -h >> /home/$1/system_info
+echo "==========" >> /home/$1/system_info
+lsblk >> /home/$1/system_info
+echo "==========" >> /home/$1/system_info
+echo "Успехов в обучении!!!" >>/home/$1/system_info
+
+pacavaca@ubuntu-vm:~$ sudo ./new_user_add vazya_ololo
+New password:
+Retype new password:
+passwd: password updated successfully
+
+pacavaca@ubuntu-vm:~$ su - vazya_ololo
+Password:
+vazya_ololo@ubuntu-vm:~$ pwd
+/home/vazya_ololo
+
+
+
+**
+# 3. Cоздать файл immortalfile, запретить удаление файла даже пользователем root и попытаться его удалить из под root,
+# результатом должно быть “Operation not permitted”. Подсказка: CHATTR(1)
+
+  i      A  file  with the 'i' attribute cannot be modified: it cannot be deleted or renamed, no link can be created to
+ 	 this file, most of the file's metadata can not be modified, and the file can not be opened in write mode.
+	 Only the superuser or a process possessing the CAP_LINUX_IMMUTABLE capability can set or clear this attribute.
+
+pacavaca@ubuntu-vm:~$ touch /tmp/immortalfile
+pacavaca@ubuntu-vm:~$ ls -la /tmp/
+-rw-rw-r--  1 pacavaca pacavaca    0 июл 11 10:58 immortalfile
+pacavaca@ubuntu-vm:~$ sudo chattr +i /tmp/immortalfile
+pacavaca@ubuntu-vm:~$ lsattr /tmp/immortalfile
+----i---------e------- /tmp/immortalfile
+pacavaca@ubuntu-vm:~$ sudo rm /tmp/immortalfile
+rm: cannot remove '/tmp/immortalfile': Operation not permitted
+
+***
+#4. выполнить команду, разобраться что она делает и что сохраняется в file.log
+env -i bash -x -l -c 'echo hello_there!' > file.log 2>&1
+env -i  -i, --ignore-environment
+              start with an empty environment
+bash -x -l -c   -c        If the -c option is present, then commands are read from the first non-option argument command_string.  If there are arguments after the command_string, the first  ar‐
+                 gument  is  assigned  to  $0  and any remaining arguments are assigned to the positional parameters.  The assignment to $0 sets the name of the shell, which is used in
+                 warning and error messages.
+ 		-l        Make bash act as if it had been invoked as a login shell (see INVOCATION below).
+		-x        Print commands and their arguments as they are executed.
+2>&1 		- перенаправление stderr в stdout
+В файле какой-то дебаг, малопонятный но очень интересный.
