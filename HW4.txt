@@ -1,0 +1,151 @@
+#HW_4
+#1. Отобразить все процессы в системе
+
+pacavaca@ubuntu-vm:~$ ps aux
+USER         PID %CPU %MEM    VSZ   RSS TTY      STAT START   TIME COMMAND
+root           1  0.0  0.2 166328 11828 ?        Ss   июл10   0:02 /sbin/init
+root           2  0.0  0.0      0     0 ?        S    июл10   0:00 [kthreadd]
+root           3  0.0  0.0      0     0 ?        I<   июл10   0:00 [rcu_gp]
+root           4  0.0  0.0      0     0 ?        I<   июл10   0:00 [rcu_par_gp]
+root           5  0.0  0.0      0     0 ?        I<   июл10   0:00 [slub_flushwq]
+...
+
+#2. Запустить бесконечный процесс в фоновом режиме
+
+pacavaca@ubuntu-vm:~$ cat infinity.sh
+#!/usr/bin/bash
+while true ;
+echo $(date) >> ~/infinity.log ;
+do sleep 10 ;
+done
+
+pacavaca@ubuntu-vm:~$ chmod +x infinity.sh
+pacavaca@ubuntu-vm:~$ ./infinity.sh
+^Z
+[1]+  Stopped                 ./infinity.sh
+pacavaca@ubuntu-vm:~$ bg
+[1]+ ./infinity.sh &
+pacavaca@ubuntu-vm:~$ tail -f infinity.log
+Вт 11 июл 2023 11:58:21 +03
+Вт 11 июл 2023 11:58:31 +03
+Вт 11 июл 2023 11:58:41 +03
+Вт 11 июл 2023 11:58:51 +03
+^C
+
+
+#3. Убедиться, что процесс продолжил работу после завершения сессии
+
+pacavaca    6102  0.0  0.0   7504  3840 ?        S    12:12   0:00 /usr/bin/bash ./infinity.sh
+pacavaca    6111  0.0  0.0   5772  1012 ?        S    12:13   0:00 sleep 10
+Процесс остался, лог обновляется.
+
+#4. Убить процесс, запущенный в фоновом режиме
+
+pacavaca@ubuntu-vm:~$ kill -9 6102
+Лог перестал обновляться.
+
+#5. Написать свой сервис под управлением systemd, добавить его в автозагрузку (можно использовать процесс из п.2
+
+pacavaca@ubuntu-vm:~$ cat /usr/local/bin/dataspamer/infinity.sh
+#!/usr/bin/bash
+while true ;
+echo $(date) >> /home/pacavaca/infinity.log ;
+do sleep 10 ;
+
+
+pacavaca@ubuntu-vm:~$ cat /etc/systemd/system/dataspamer.service
+[Unit]
+Description=DataSpamer
+After=syslog.target
+After=network.target
+
+[Service]
+Type=simple
+Environment=RACK_ENV=production
+OOMScoreAdjust=-100
+ExecStart=/usr/local/bin/dataspamer/infinity.sh
+ExecReload=/bin/kill -HUP $MAINPID
+KillMode=process
+Restart=on-failure
+TimeoutSec=300
+
+[Install]
+WantedBy=multi-user.target
+
+
+pacavaca@ubuntu-vm:~$ systemctl status dataspamer.service
+● dataspamer.service - DataSpamer
+     Loaded: loaded (/etc/systemd/system/dataspamer.service; enabled; vendor preset: enabled)
+     Active: active (running) since Tue 2023-07-11 16:04:42 +03; 11s ago
+   Main PID: 8038 (infinity.sh)
+      Tasks: 2 (limit: 4557)
+     Memory: 544.0K
+        CPU: 7ms
+     CGroup: /system.slice/dataspamer.service
+             ├─8038 /usr/bin/bash /usr/local/bin/dataspamer/infinity.sh
+             └─8042 sleep 10
+
+июл 11 16:04:42 ubuntu-vm systemd[1]: Started DataSpamer.
+
+
+
+
+#6. Посмотреть логи своего сервиса.
+pacavaca@ubuntu-vm:~$ journalctl -u dataspamer.service
+...
+июл 11 16:01:57 ubuntu-vm systemd[1]: Starting DataSpamer...
+июл 11 16:03:58 ubuntu-vm systemd[1]: dataspamer.service: Deactivated successfully.
+июл 11 16:03:58 ubuntu-vm systemd[1]: dataspamer.service: Unit process 8020 (sleep) remains running after unit stopped.
+июл 11 16:03:58 ubuntu-vm systemd[1]: Stopped DataSpamer.
+июл 11 16:04:42 ubuntu-vm systemd[1]: Started DataSpamer.
+
+**
+#7. Написать скрипт, который выводит следующую информацию (можно переиспользовать предыдущее дз):
+#	кол-во процессов запущенных из под текущего пользователя
+#	load average за 15 минут
+#	кол-во свободной памяти
+#	свободное место в рутовом разделе “/”
+
+pacavaca@ubuntu-vm:~$ cat hw4_7
+#!/usr/bin/bash
+date
+ps U $(whoami) | wc -l | awk '{$2 = "Количество процессов от текущего пользователя: "; print $2 ($1-1)}'
+free -h | awk '/Mem/{print $1$2}' | sed -e 's/Gi/ Гигабайт/g' -e 's/Mem:/Всего оперативной памяти: /g';
+free -h | awk '/Mem/{print $1$4}' | sed -e 's/Gi/ Гигабайт/g' -e 's/Mem:/Свободно оперативной памяти: /g';cat /proc/cpuinfo | grep processor | wc -l | awk '{$2 = "Количество ядер:          "; print $2 $1}';
+cat /proc/loadavg | awk '{ $6 = "Загрузка процессора за 15 минут:      "; print $6 $3}';
+df -h / | grep / | awk '{$7 = "Свободное место в root разделе /:      "; print $7 $4}';
+ip -4 a | grep inet | awk '{print $1 $2}' | sed 's/inet/IP-адрес:                 /g '
+
+pacavaca@ubuntu-vm:~$ ./hw4_7
+Количество процессов от текущего пользователя: 13
+Всего оперативной памяти: 3,8 Гигабайт
+Свободно оперативной памяти: 2,9 Гигабайт
+Количество ядер:          2
+Загрузка процессора за 15 минут:      0.00
+Свободное место в root разделе /:      5,5G
+IP-адрес:                 127.0.0.1/8
+IP-адрес:                 10.0.2.11/24
+
+
+#8. Добавить в cron задачу, которая будет каждые 10 минут писать в файл результаты выполнения скрипта из п.7
+***
+
+pacavaca@ubuntu-vm:~$ crontab -l
+...
+*/10 * * * * bash /home/pacavaca/hw4_7 >> /home/pacavaca/hw4_7file
+
+pacavaca@ubuntu-vm:~$ cat hw4_7file
+Вт 11 июл 2023 17:50:01 +03
+Количество процессов от текущего пользователя: 13
+Всего оперативной памяти: 3,8 Гигабайт
+Свободно оперативной памяти: 2,9 Гигабайт
+Количество ядер:          2
+Загрузка процессора за 15 минут:      0.00
+Свободное место в root разделе /:      5,5G
+IP-адрес:                 127.0.0.1/8
+IP-адрес:                 10.0.2.11/24
+
+
+#9. сделать п. 5 для node-exporter https://github.com/prometheus/node_exporter
+
+ ** и ***не обязательные  Дедлайн: 24/07/2023
